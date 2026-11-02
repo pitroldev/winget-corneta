@@ -1,0 +1,79 @@
+name: Prepare and submit WinGet manifest
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Submit the validated manifest for Microsoft review
+        type: boolean
+        default: false
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: winget-corneta
+  cancel-in-progress: false
+
+jobs:
+  manifest:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          path: package
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: pitroldev/corneta
+          ref: b5db392100f5894217e100d764be11ce91516d62
+          persist-credentials: false
+          path: automation
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.18.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: 1.97.1
+      - name: Verify the stable release and generate manifests
+        id: manifest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node automation/scripts/distribution.mjs prepare .artifacts/release
+          if ($LASTEXITCODE) { throw 'Release verification failed.' }
+          node package/scripts/manifest.mjs .artifacts/release .artifacts/output
+          if ($LASTEXITCODE) { throw 'Manifest generation failed.' }
+      - name: Validate on the disposable runner
+        shell: pwsh
+        env:
+          MANIFEST_DIRECTORY: ${{ steps.manifest.outputs.directory }}
+        run: ./package/scripts/validate.ps1 -ManifestDirectory $env:MANIFEST_DIRECTORY -ReleaseDirectory .artifacts/release
+      - name: Retain validated manifests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: winget-manifests
+          path: .artifacts/output/manifests/
+          if-no-files-found: error
+      - name: Submit for Microsoft review
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.publish)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+          MANIFEST_DIRECTORY: ${{ steps.manifest.outputs.directory }}
+          VERSION: ${{ steps.manifest.outputs.version }}
+        run: |
+          if (-not $env:GH_TOKEN) {
+            'Publication waiting: configure WINGET_GITHUB_TOKEN. Manifests were validated but no PR was created.' >> $env:GITHUB_STEP_SUMMARY
+            Write-Output '::notice::Publication is waiting for WINGET_GITHUB_TOKEN.'
+            exit 0
+          }
+          node automation/scripts/distribution.mjs assert-current .artifacts/release
+          if ($LASTEXITCODE) { throw 'The release changed after validation.' }
+          node package/scripts/submit.mjs $env:MANIFEST_DIRECTORY $env:VERSION
+          if ($LASTEXITCODE) { throw 'Manifest submission failed.' }
