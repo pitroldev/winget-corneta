@@ -1,11 +1,10 @@
 param([Parameter(Mandatory)][string]$ManifestDirectory, [Parameter(Mandatory)][string]$ReleaseDirectory)
 $ErrorActionPreference = 'Stop'
 if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'Installation validation requires a disposable GitHub-hosted runner.' }
-if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-    Install-Module Microsoft.WinGet.Client -Scope CurrentUser -Force -Repository PSGallery
-    Import-Module Microsoft.WinGet.Client
-    Repair-WinGetPackageManager -Force -Latest
-}
+Install-Module Microsoft.WinGet.Client -Scope CurrentUser -Force -Repository PSGallery
+Import-Module Microsoft.WinGet.Client
+Repair-WinGetPackageManager -Force -Latest
+winget --version
 winget validate --manifest $ManifestDirectory
 if ($LASTEXITCODE) { throw 'WinGet manifest validation failed.' }
 $release = Get-Content (Join-Path $ReleaseDirectory 'release.json') -Raw | ConvertFrom-Json
