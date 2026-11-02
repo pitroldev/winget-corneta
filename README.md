@@ -23,3 +23,16 @@ is waiting for credential setup; this does not mean the package was submitted.
 
 The initial package may require signing Microsoft's contributor license agreement.
 Publication cannot bypass that agreement or Microsoft moderation.
+
+The initial submission is [microsoft/winget-pkgs#468450](https://github.com/microsoft/winget-pkgs/pull/468450).
+After Microsoft accepts it and refreshes the catalog, install with:
+
+```powershell
+winget install --id pitroldev.Corneta --exact --source winget
+```
+
+The dedicated `corneta-winget-ci` token is configured with `public_repo` scope and
+expires on January 31, 2027. Rotate it before that date and replace the repository
+secret through standard input or GitHub's encrypted secret settings. This classic
+scope covers public repositories accessible to the account, not only this project.
+Repository workflows never require access to private repositories.
